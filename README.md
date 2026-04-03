@@ -39,3 +39,4 @@ python3 audio_vector_workflow.py \
 2. Rewrites MIDI `set_tempo` to match `TARGET_BPM` (microseconds per beat).
 3. Quantizes note events to a 1/16 grid (`quantize-division=16`) to remove extraction jitter.
 4. Re-synthesizes adjusted MIDI via FluidSynth + your `.sf2` piano library.
+# PVRR
