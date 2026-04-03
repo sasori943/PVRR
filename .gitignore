@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+.venv/
+*.pyc
+
+# Large/generated audio artifacts
+*.wav
+*.mid
+*.m4a
+*.mp3
+*.sf2
+*.band/
+
+# Temporary extraction output
+_bp_tmp/
