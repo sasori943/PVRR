@@ -1,4 +1,4 @@
-# Audio Vector Workflow (Basic Pitch + Mido + FluidSynth)
+# Piano Vectorizer & Re-Renderer
 
 ## Project name
 
@@ -22,12 +22,30 @@ In short, this project does not do direct waveform stretching. It vectorizes fir
 
 核心思想是“先矢量化，再重渲染”，而不是直接对波形做时域拉伸。
 
+## Python files（文件名与职责）
+
+| File | Role |
+|------|------|
+| `pvrr_cli.py` | **Main CLI** — run subcommands (`vectorize`, `video-to-mp3`, `video-to-wav`). Same as `python -m pvrr`. |
+| `legacy_vectorize_from_wav.py` | **Legacy** — old scripts that pass `--input-wav`; forwards to `vectorize --input-audio`. |
+| `pvrr/__main__.py` | Module entry so **`python -m pvrr`** works. |
+| `pvrr/command_line.py` | Argparse setup and subcommand dispatch. |
+| `pvrr/piano_vectorize_pipeline.py` | Audio → Basic Pitch MIDI → optional tempo / quantize → FluidSynth WAV. |
+| `pvrr/video_audio_extract.py` | ffmpeg wrappers: video → MP3 or lossless WAV. |
+
 ## Project layout
 
 ```text
 PVRR/
-├── audio_vector_workflow.py
+├── pvrr_cli.py                 # primary CLI entry (or: python -m pvrr)
+├── legacy_vectorize_from_wav.py
 ├── requirements.txt
+├── pvrr/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── command_line.py
+│   ├── piano_vectorize_pipeline.py
+│   └── video_audio_extract.py
 ├── input/
 ├── soundfonts/
 ├── output/
@@ -56,11 +74,15 @@ Place files in this folder (or pass absolute paths):
 - `input/original_piano.wav` (or `.mp3` / `.m4a`)
 - `soundfonts/piano_library.sf2`
 
-## 3) Run end-to-end pipeline
+## 3) Command line usage
+
+Use either **`python3 pvrr_cli.py`** or **`python3 -m pvrr`** (equivalent).
+
+### A) Vectorize + tempo adjust + re-render
 
 ```bash
-python3 audio_vector_workflow.py \
-  --input-wav input/original_piano.wav \
+python3 pvrr_cli.py vectorize \
+  --input-audio input/original_piano.wav \
   --vector-mid output/midi/original_piano.mid \
   --adjusted-mid output/midi/adjusted.mid \
   --soundfont soundfonts/piano_library.sf2 \
@@ -69,11 +91,11 @@ python3 audio_vector_workflow.py \
   --quantize-division 16
 ```
 
-Or use automatic BPM estimation + speed ratio (e.g. half speed):
+Use automatic BPM estimation + speed ratio (e.g. half speed):
 
 ```bash
-python3 audio_vector_workflow.py \
-  --input-wav input/original_piano.wav \
+python3 -m pvrr vectorize \
+  --input-audio input/original_piano.wav \
   --soundfont soundfonts/piano_library.sf2 \
   --vector-mid output/midi/original_piano.mid \
   --adjusted-mid output/midi/half_speed.mid \
@@ -81,9 +103,57 @@ python3 audio_vector_workflow.py \
   --speed-ratio 0.5
 ```
 
-## 4) What this script does
+### B) Convert MP4 video to MP3
+
+```bash
+python3 pvrr_cli.py video-to-mp3 \
+  --input-video input/sample.mp4 \
+  --output-mp3 output/audio/sample.mp3 \
+  --bitrate 192k \
+  --overwrite
+```
+
+### C) Convert MP4 to lossless WAV (recommended before vectorize)
+
+MP3 compression can blur transients and confuse pitch/onset detection. For transcription, prefer extracting PCM WAV from the video:
+
+```bash
+python3 pvrr_cli.py video-to-wav \
+  --input-video input/sample.mp4 \
+  --output-wav output/audio/sample.wav \
+  --overwrite
+```
+
+Then run `vectorize` on the WAV. Optional flags to keep timing closer to the recording:
+
+```bash
+python3 pvrr_cli.py vectorize \
+  --input-audio output/audio/sample.wav \
+  --soundfont soundfonts/piano_library.sf2 \
+  --preserve-midi-tempo \
+  --no-quantize
+```
+
+### D) Legacy `--input-wav` wrapper
+
+If an old script still uses `--input-wav`:
+
+```bash
+python3 legacy_vectorize_from_wav.py --input-wav input/old.wav --soundfont soundfonts/piano_library.sf2
+```
+
+This is equivalent to `pvrr_cli.py vectorize --input-audio input/old.wav …` (other flags pass through).
+
+This command requires `ffmpeg`:
+
+```bash
+brew install ffmpeg
+```
+
+## 4) What the toolkit does
 
 1. Uses Spotify Basic Pitch (CNN encoder) to extract polyphonic MIDI with onset and velocity.
-2. Rewrites MIDI `set_tempo` to match `TARGET_BPM` (microseconds per beat).
-3. Quantizes note events to a 1/16 grid (`quantize-division=16`) to remove extraction jitter.
+2. Optionally rewrites MIDI `set_tempo` to match estimated or explicit BPM; use `--preserve-midi-tempo` to keep Basic Pitch’s tempo map.
+3. Optionally quantizes note events to a grid (`--quantize-division`, default 16); use `--no-quantize` to keep detected micro-timing.
 4. Re-synthesizes adjusted MIDI via FluidSynth + your `.sf2` piano library.
+5. Converts video files to MP3 or lossless WAV via `ffmpeg`.
